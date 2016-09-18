@@ -1,0 +1,23 @@
+#!/bin/sh
+
+# POP(window_id, tag = misc)
+# pop a window from an invisible stack
+
+set -e
+
+tagdir=/tmp/xdostack/${1:-misc}
+
+[ -d $tagdir ] || {
+	>&2 echo "Tag dir does not exist."
+	exit 1
+}
+
+stack_file=$tagdir/stack
+
+pop_dir=`cat $stack_file`
+if [ "$pop_dir" == "$tagdir" ]; then
+	rm $stack_file
+else
+	dirname $pop_dir > $stack_file
+	xdo show $(basename $pop_dir)
+fi

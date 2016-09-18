@@ -1,0 +1,23 @@
+#!/bin/sh
+
+# PUSH(window_id = current, tag)
+# push a window into an invisible stack
+
+set -e
+
+cache_dir=/tmp/xdostack
+[ ! -d $cache_dir ] && mkdir $cache_dir
+
+wid=`[ -z $1 ] && bspc query -N -n || echo $1`
+
+tag=${2:-misc}
+stack_file=$cache_dir/$tag/stack
+
+newpath=$([ -d $cache_dir/$tag ] &&
+	head -c -1 -q $stack_file ||
+	echo -n $cache_dir/$tag )/$wid
+
+mkdir -p $newpath
+echo $newpath > $stack_file
+
+xdo hide $wid
