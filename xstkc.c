@@ -18,6 +18,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <stdlib.h>
 int main(int argc, char **argv) {
 	int lfd = socket(AF_INET, SOCK_STREAM, 0);
 	struct sockaddr_in server;
@@ -52,12 +53,22 @@ int main(int argc, char **argv) {
 			fputs("pop\n", stderr);
 			cmd = 2;
 		} else {
-			fputs("push\n", stderr);
-			cmd = 1;
+			fputs("push", stderr);
+
+			if (argc > 2) {
+				fputs(argv[2], stderr);
+				fputc('\n', stderr);
+				if (write(lfd, &cmd, sizeof(cmd)) < 0) {
+					perror("write0");
+					close(lfd);
+					return 1;
+				}
+				cmd = atoi(argv[2]);
+			} else cmd = 1;
 		}
 
 		if (write(lfd, &cmd, sizeof(cmd)) < 0) {
-			perror("write");
+			perror("write0?");
 			close(lfd);
 			return 1;
 		}

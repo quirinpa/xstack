@@ -32,11 +32,12 @@ xdo hide $wid
 
 #include <stdio.h>
 
-static int xpush(Display *d, STACK_ELEMENT **stack, Window w) {
+static int xpush(Display *d, Window rootw, STACK_ELEMENT **stack, Window w) {
 	int revert_to_return;
 	if (!w) XGetInputFocus(d, &w, &revert_to_return);
-	if (w != None && w != PointerRoot) {
-		fprintf(stderr, "r: %d, w: %d\n", revert_to_return, w);
+	/* if (w != None && w != PointerRoot && w != rootw) { */
+	if (w != rootw) {
+		/* fprintf(stderr, "r: %d, w: %d\n", revert_to_return, w); */
 		*stack = PUSH(*stack, w);
 		XUnmapWindow(d, w);
 		return 0;
@@ -49,6 +50,24 @@ static int xpop(Display *d, STACK_ELEMENT **stack_r) {
 	Window pop_window;
 	if (POP(stack_r, &pop_window)) return 1;
 	XMapWindow(d, pop_window);
+	return 0;
+}
+
+static int xerror;
+
+static int x_err_handler(Display *d, XErrorEvent *e) {
+	char buf[60];
+	fputs("X - ", stderr);
+	XGetErrorText(d, e->error_code, buf, 60 * sizeof(char));
+	fputs(buf, stderr);
+	fputc('\n', stderr);
+	xerror = 1;
+	return 0;
+}
+
+static int x_io_err_handler(Display *d) {
+	fputs("XIO\n", stderr);
+	xerror = 1;
 	return 0;
 }
 
@@ -133,6 +152,10 @@ int main() {
 		return 1;
 	}
 
+	/* Atom a = XInternAtom(display, "__NET_CLIENT_LIST", true); */
+	XSetErrorHandler(x_err_handler);
+	XSetIOErrorHandler(x_io_err_handler);
+	Window rootw = XDefaultRootWindow(display);
 	STACK_ELEMENT *stack = NULL;
 	not_term = 1;
 
@@ -149,8 +172,11 @@ int main() {
 			continue;
 		}
 
+		xerror = 0;
+
 		if (!not_term) break;
 		if (res == 0) continue;
+
 		if (FD_ISSET(lfd, &fds)) {
 			struct sockaddr_in client;
 		 	int client_len, cfd =
@@ -179,16 +205,14 @@ int main() {
 			int ret;
 			if (cmd_type == 1) {
 				puts("u");
-				ret = xpush(display, &stack, 0);
-				write(cfd, &ret, sizeof(int));
+				ret = xpush(display, rootw, &stack, 0);
 			} else if (cmd_type == 2) {
 				puts("o");
 				ret = xpop(display, &stack);
-				write(cfd, &ret, sizeof(int));
 			} else {
 				int wid, read1;
+				putchar('U');
 				read1 = read(cfd, &wid, sizeof(int));
-				close(cfd);
 				if (read1 < 0) {
 					if (read1 == -1) {
 						perror("read1");
@@ -196,11 +220,15 @@ int main() {
 					}
 					break;
 				}
-				xpush(display, &stack, wid);
+				printf("%d\n", wid);
+				ret = xpush(display, rootw, &stack, wid);
 			}
-			fprintf(stderr, "ret: %d\n", ret);
 
-			XFlush(display);
+			XSync(display, 0);
+			/* XFlush(display); */
+			ret = ret || xerror;
+			write(cfd, &ret, sizeof(int));
+			/* fprintf(stderr, "ret: %d\n", ret); */
 			close(cfd);
 		}
 	}
