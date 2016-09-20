@@ -33,8 +33,9 @@ xdo hide $wid
 #include <stdio.h>
 
 static int xerror;
+static Window rootw;
 
-static int xpush(Display *d, Window rootw, STACK_ELEMENT **stack, Window w) {
+static int xpush(Display *d, STACK_ELEMENT **stack, Window w) {
 	int revert_to_return;
 	if (!w) XGetInputFocus(d, &w, &revert_to_return);
 	if (w != rootw) {
@@ -57,17 +58,11 @@ static int xpop(Display *d, STACK_ELEMENT **stack_r) {
 
 
 static int x_err_handler(Display *d, XErrorEvent *e) {
-	/* char buf[60]; */
-	/* fputs("X - ", stderr); */
-	/* XGetErrorText(d, e->error_code, buf, 60 * sizeof(char)); */
-	/* fputs(buf, stderr); */
-	/* fputc('\n', stderr); */
 	xerror = 1;
 	return 0;
 }
 
 static int x_io_err_handler(Display *d) {
-	/* fputs("XIO\n", stderr); */
 	xerror = 1;
 	return 0;
 }
@@ -84,7 +79,6 @@ cleanup_windows(Display *d, STACK_ELEMENT *first) {
 	while (first) {
 		STACK_ELEMENT *prev = first;
 		XMapWindow(d, first->data);
-		/* XDestroyWindow(d, first->data); */
 		first = first->next;
 		free(prev);
 	}
@@ -96,6 +90,8 @@ cleanup_windows(Display *d, STACK_ELEMENT *first) {
 #include <arpa/inet.h>
 #include <string.h>
 #include <errno.h>
+#include <stdbool.h>
+#include "common.h"
 int main() {
 	sigset_t mask, orig_mask;
 	struct sigaction act;
@@ -111,22 +107,16 @@ int main() {
 	sigemptyset(&mask);
 	sigaddset(&mask, SIGINT);
 
-	if (sigprocmask(SIG_BLOCK, &mask, &orig_mask) < 0) {
-		perror("sigprocmask");
-		return 1;
-	}
+	if (sigprocmask(SIG_BLOCK, &mask, &orig_mask) < 0)
+	{ perror("sigprocmask"); return 1; }
 
 	lfd = socket(AF_INET, SOCK_STREAM, 0);
-	if (lfd < 0) {
-		perror("socket");
-		return 1;
-	}
 
-	if (setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
-		perror("setsockopt");
-		close(lfd);
-		return 1;
-	}
+	if (lfd < 0)
+	{ perror("socket"); return 1; }
+
+	if (setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
+	{ perror("setsockopt"); close(lfd); return 1; }
 
 	struct sockaddr_in myaddr;
 	memset(&myaddr, 0, sizeof(myaddr));
@@ -134,29 +124,20 @@ int main() {
 	myaddr.sin_addr.s_addr = INADDR_ANY;
 	myaddr.sin_port = htons(32005);
 
-	if (bind(lfd, (struct sockaddr *)&myaddr, sizeof(myaddr)) < 0) {
-		perror("bind");
-		close(lfd);
-		return 1;
-	}
+	if (bind(lfd, (struct sockaddr *)&myaddr, sizeof(myaddr)) < 0)
+	{ perror("bind"); close(lfd); return 1; }
 
-	if (listen(lfd, 1) < 0) {
-		perror("listen");
-		close(lfd);
-		return 1;
-	}
+	if (listen(lfd, 1) < 0)
+	{ perror("listen"); close(lfd); return 1; }
 
 	Display *display = XOpenDisplay(NULL);
-	if (display == NULL) {
-		fputs("couldn't open display\n", stderr);
-		close(lfd);
-		return 1;
-	}
 
-	/* Atom a = XInternAtom(display, "__NET_CLIENT_LIST", true); */
+	if (display == NULL)
+	{ fputs("couldn't open display\n", stderr); close(lfd); return 1; }
+
 	XSetErrorHandler(x_err_handler);
 	XSetIOErrorHandler(x_io_err_handler);
-	Window rootw = XDefaultRootWindow(display);
+	rootw = XDefaultRootWindow(display);
 	STACK_ELEMENT *stack = NULL;
 	not_term = 1;
 
@@ -180,55 +161,42 @@ int main() {
 
 		if (FD_ISSET(lfd, &fds)) {
 			struct sockaddr_in client;
-		 	int client_len, cfd =
-				accept(lfd, (struct sockaddr*)&client, &client_len);
+		 	int client_len, cfd = accept(lfd, (struct sockaddr*)&client, &client_len);
 
-			if (cfd<0) {
-				if (cfd==-1) {
+			if (cfd < 0) {
+				if (cfd == -1) {
 					perror("accept");
 					continue;
 				}
 				break;
 			}
 
-			int cmd_type, read0 = read(cfd, &cmd_type, sizeof(int));
+#define MAYBE_READ(store, type) {\
+	register int status = read(cfd, &store, sizeof(type));\
+	if (status < 0) {\
+		if (status == -1) {\
+			perror("read " # store); close(cfd); continue;\
+		}; close(cfd); break;\
+	}}
 
-			if (read0 < 0) {
-				if (read0 == -1) {
-					perror("read0");
-					close(cfd);
-					continue;
-				}
-				close(cfd);
-				break;
-			}
+			cmd_t cmd;
+			MAYBE_READ(cmd, cmd_t);
 
-			int ret;
-			if (cmd_type == 1) {
-				if (!(ret = xpush(display, rootw, &stack, 0)))
+			status_t failed;
+			if (cmd < 2) {
+				if (cmd) {
+					xwin_t windowid;
+					MAYBE_READ(windowid, xwin_t);
+
+					if (!(failed = xpush(display, &stack, windowid)))
+						printf("U%lu\n", windowid);
+
+				} else if (!(failed = xpush(display, &stack, 0)))
 					puts("u");
-			} else if (cmd_type == 2) {
-				if (!(ret = xpop(display, &stack)))
-					puts("o");
-			} else {
-				int wid, read1;
-				read1 = read(cfd, &wid, sizeof(int));
-				if (read1 < 0) {
-					if (read1 == -1) {
-						perror("read1");
-						continue;
-					}
-					break;
-				}
-				if (!(ret = xpush(display, rootw, &stack, wid)))
-					printf("U%d\n", wid);
-			}
+			} else if (!(failed = xpop(display, &stack)))
+				puts("o");
 
-			/* XSync(display, 0); */
-			/* XFlush(display); */
-			/* ret = ret || xerror; */
-			write(cfd, &ret, sizeof(int));
-			/* fprintf(stderr, "ret: %d\n", ret); */
+			write(cfd, &failed, sizeof(status_t));
 			close(cfd);
 		}
 	}
