@@ -1,30 +1,3 @@
-/*
-#!/bin/sh
-
-# PUSH(window_id = current, tag)
-# push a window into an invisible stack
-
-set -e
-
-cache_dir=/tmp/xdostack
-[ ! -d $cache_dir ] && mkdir $cache_dir
-
-wid=`[ -z $1 ] && bspc query -N -n || echo $1`
-
-tag=${2:-misc}
-stack_file=$cache_dir/$tag/stack
-
-newpath=$([ -d $cache_dir/$tag ] &&
-	head -c -1 -q $stack_file ||
-	echo -n $cache_dir/$tag )/$wid
-
-mkdir -p $newpath
-echo $newpath > $stack_file
-
-xdo hide $wid
-*/
-
-
 #include <X11/Xlib.h>
 
 #define TYPE Window
@@ -84,6 +57,8 @@ cleanup_windows(Display *d, STACK_ELEMENT *first) {
 	}
 }
 
+#include "common.h"
+/* #include <stdlib.h> */
 #include <unistd.h>
 #include <stdio.h>
 #include <sys/socket.h>
@@ -91,8 +66,11 @@ cleanup_windows(Display *d, STACK_ELEMENT *first) {
 #include <string.h>
 #include <errno.h>
 #include <stdbool.h>
-#include "common.h"
-int main() {
+int main(int argc, char **argv) {
+	port_t port;
+	if (argc>1) port = (port_t) strtoul(argv[1], NULL, 10);
+	else port = 32005;
+
 	sigset_t mask, orig_mask;
 	struct sigaction act;
 	int lfd, yes = 1;
@@ -122,7 +100,7 @@ int main() {
 	memset(&myaddr, 0, sizeof(myaddr));
 	myaddr.sin_family = AF_INET;
 	myaddr.sin_addr.s_addr = INADDR_ANY;
-	myaddr.sin_port = htons(32005);
+	myaddr.sin_port = htons(port);
 
 	if (bind(lfd, (struct sockaddr *)&myaddr, sizeof(myaddr)) < 0)
 	{ perror("bind"); close(lfd); return 1; }
