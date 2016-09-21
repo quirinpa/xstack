@@ -14,16 +14,15 @@ static struct argp_option options[] = {
 
 #include "common.h"
 typedef struct {
-	bool is_push:1,
-			 has_command:1,
-			 has_windowid:1,
-			 has_address:1;
-
 	xwin_t wid;
 	port_t port;
 	char *addr;
 } arguments_t;
 
+bool is_push = false,
+		 has_command = false,
+		 has_windowid = false,
+		 has_address = false;
 
 #include <stdlib.h>
 #include <string.h>
@@ -34,7 +33,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
 		case 'a':
 			{
 				register char *end = arg;
-				args->has_address = true;
+				has_address = true;
 				while (end < arg + sizeof(arg)) {
 					register char c = *arg;
 					if (c == '\0') break;
@@ -53,18 +52,18 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
 			break;
 		case ARGP_KEY_NO_ARGS: argp_usage(state); break;
 		case ARGP_KEY_ARG:
-			if (args->has_command) {
+			if (has_command) {
 				args->wid = (xwin_t) strtoul(arg, NULL, 10);
-				args->has_windowid = true;
+				has_windowid = true;
 			} else {
-				if (!(args->is_push = !strcmp(arg, "push")) &&
+				if (!(is_push = !strcmp(arg, "push")) &&
 						strcmp(arg, "pop") ) {
 					fputs("unknown command \"", stderr);
 					fputs(arg, stderr);
 					fputs("\"\n", stderr);
 					return 1;
 				}
-				args->has_command = true;
+				has_command = true;
 			}
 			break;
 		default: return ARGP_ERR_UNKNOWN;
@@ -74,6 +73,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
 }
 
 static struct argp argp = { options, parse_opt, args_doc, doc, 0, NULL, 0 };
+
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -84,12 +84,9 @@ int main(int argc, char **argv) {
 
 	args.addr = "127.0.0.1";
 	args.port = 32005;
-	args.has_command = false;
-	args.has_windowid = false;
-	args.has_address = false;
 	argp_parse(&argp, argc, argv, 0, 0, &args);
 
-	if (!args.has_command) {
+	if (!has_command) {
 		fputs("no command\n", stderr);
 		return 1;
 	}
@@ -114,8 +111,8 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
-	if (args.is_push) {
-		cmd_t cmd = (cmd_t) args.has_windowid;
+	if (is_push) {
+		cmd_t cmd = (cmd_t) has_windowid;
 
 		if (write(lfd, &cmd, sizeof(cmd_t)) < 0) {
 			perror("write push");
