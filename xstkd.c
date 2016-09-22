@@ -3,8 +3,6 @@
 #define TYPE Window
 #include "once/stack.h"
 
-#include <stdio.h>
-
 static int xerror;
 static Window rootw;
 

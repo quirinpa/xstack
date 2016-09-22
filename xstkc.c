@@ -84,12 +84,8 @@ int main(int argc, char **argv) {
 
 	args.addr = "127.0.0.1";
 	args.port = 32005;
-	argp_parse(&argp, argc, argv, 0, 0, &args);
-
-	if (!has_command) {
-		fputs("no command\n", stderr);
+	if (argp_parse(&argp, argc, argv, 0, 0, &args))
 		return 1;
-	}
 
 	int lfd = socket(AF_INET, SOCK_STREAM, 0);
 	struct sockaddr_in server;
